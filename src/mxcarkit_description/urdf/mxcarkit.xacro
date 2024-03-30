@@ -243,7 +243,7 @@
   <axis xyz="0.0 1.0 0.0"/>
 </joint>
 
-<joint name="lidar_joint" type="continuous">
+<joint name="lidar_joint" type="fixed">
   <origin xyz="0.0115 0.0 0.135" rpy="0 0 0"/>
   <parent link="base_link"/>
   <child link="lidar_link_1"/>
@@ -255,5 +255,148 @@
   <parent link="base_link"/>
   <child link="camera_link_1"/>
 </joint>
+
+
+<!-- USS -->
+<link name="USS_SRF">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_SRF_joint" type="fixed">
+      <origin xyz="0.08 -0.149 0.0705"  rpy="0 0 -1.571" />
+      <parent link="base_link"/>
+      <child link="USS_SRF" />
+</joint>
+
+ <link name="USS_SRB">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_SRB_joint" type="fixed">
+      <origin xyz="-0.065 -0.149 0.0705"  rpy="0 0 -1.571" />
+      <parent link="base_link"/>
+      <child link="USS_SRB" />
+</joint>
+
+<link name="USS_BR">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_BR_joint" type="fixed">
+      <origin xyz="-0.254 -0.135 0.0945"  rpy="0 0 -2.53" />
+      <parent link="base_link"/>
+      <child link="USS_BR" />
+</joint>
+
+<link name="USS_BC">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_BC_joint" type="fixed">
+      <origin xyz="-0.34 0 0.0945"  rpy="0 0 3.14" />
+      <parent link="base_link"/>
+      <child link="USS_BC" />
+</joint>
+
+<link name="USS_BL">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_BL_joint" type="fixed">
+      <origin xyz="-0.254 0.135 0.0945"  rpy="0 0 2.53" />
+      <parent link="base_link"/>
+      <child link="USS_BL" />
+</joint>
+
+<link name="USS_SLB">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_SLB_joint" type="fixed">
+      <origin xyz="-0.065 0.149 0.0705"  rpy="0 0 1.57" />
+      <parent link="base_link"/>
+      <child link="USS_SLB" />
+</joint>
+
+<link name="USS_SLF">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_SLF_joint" type="fixed">
+      <origin xyz="0.08 0.149 0.0705"  rpy="0 0 1.57" />
+      <parent link="base_link"/>
+      <child link="USS_SLF" />
+</joint>
+
+<link name="USS_FL">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_FL_joint" type="fixed">
+      <origin xyz="0.262 0.112 0.0485"  rpy="0 0 0.436" />
+      <parent link="base_link"/>
+      <child link="USS_FL" />
+</joint>
+
+<link name="USS_FC">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_FC_joint" type="fixed">
+      <origin xyz="0.320 0 0.0485"  rpy="0 0 0" />
+      <parent link="base_link"/>
+      <child link="USS_FC" />
+</joint>
+
+<link name="USS_FR">
+        <visual>
+            <origin xyz="0 0 0"  rpy="0 0 0"  />
+            <geometry>
+                <box size="0 0 0" />
+            </geometry>
+        </visual>
+        </link>
+<joint name="USS_FR_joint" type="fixed">
+      <origin xyz="0.242 -0.112 0.0485"  rpy="0 0 -0.436" />
+      <parent link="base_link"/>
+      <child link="USS_FR" />
+</joint>
+
 
 </robot>

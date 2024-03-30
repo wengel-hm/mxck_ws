@@ -67,7 +67,7 @@
   </actuator>
 </transmission>
 
-<transmission name="lidar_tran">
+<!--<transmission name="lidar_tran">
   <type>transmission_interface/SimpleTransmission</type>
   <joint name="lidar_joint">
     <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
@@ -76,6 +76,6 @@
     <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
     <mechanicalReduction>1</mechanicalReduction>
   </actuator>
-</transmission>
+</transmission>-->
 
 </robot>
