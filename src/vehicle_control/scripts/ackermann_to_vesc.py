@@ -5,9 +5,10 @@ import numpy as np
 from ackermann_msgs.msg import AckermannDriveStamped
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float64
+import time
 
 class AckermannToVesc:
-    def __init__(self):
+    def __init__(self, dynamic_update = False, interval = 10):
         # Load configuration parameters for mapping and mode settings
         self.load_params()
 
@@ -45,6 +46,11 @@ class AckermannToVesc:
         info_msg = ("Please activate 'Deadman' mode. Do not touch the throttle or steering for {} seconds. "
                     "Safety check ends when speed stays at 0 m/s during this time.").format(n_seconds)
         rospy.loginfo(info_msg)
+
+        # Update params with rospy.Timer real-time adjustments via Foxglove.
+        if dynamic_update:
+            # Using lambda to ignore TimerEvent arg from rospy.Timer callback
+            rospy.Timer(rospy.Duration(interval), lambda e: self.load_params())
     
     def signal_calibration_complete(self):
         # Publish simple sinus sweep to indicate that the calibration was complete
@@ -149,12 +155,10 @@ class AckermannToVesc:
         
         self.mode_btn = rospy.get_param("/rc_mode_button")
 
-        
-
 if __name__ == '__main__':
     rospy.init_node('ackermann_to_vesc', anonymous=True)
    
-    A2V = AckermannToVesc()
+    A2V = AckermannToVesc(dynamic_update = False)
 
     try:
         rospy.spin()
