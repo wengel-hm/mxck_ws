@@ -1,31 +1,23 @@
-FROM dustynv/ros:noetic-pytorch-l4t-r35.2.1
+FROM mxwilliam/mxck:mxck-noetic-perception-l4t-35.2.1
 
-RUN apt purge --yes '*opencv*'
+# Upgrade pip and install Python packages
+# RUN python3 -m pip install \
+# ...
 
-RUN apt update \
- && apt install --yes \
-    ros-$ROS_DISTRO-ackermann-msgs \
-    ros-$ROS_DISTRO-foxglove-msgs \
-    ros-$ROS_DISTRO-vision-opencv \
-    ros-$ROS_DISTRO-rqt-reconfigure \
-    ros-$ROS_DISTRO-rqt \
-    ros-$ROS_DISTRO-rqt-common-plugins 
+# Update system and install ROS packages
+# RUN apt update \
+# && apt install --yes \
+# ...
 
-RUN apt update \
- && python3 -m pip install \
- pyrealsense2 \
- matplotlib
-
-# the shell script ros_entrypoint.sh is already added to ~/.bashrc in base image
-# so we just have to replace the file
+# Replace ros_entrypoint.sh
 COPY ./ros_entrypoint.sh /ros_entrypoint.sh
-# RUN echo 'source /ros_entrypoint.sh' >> ~/.bashrc
 
+# Copy autorun script
 COPY ./autorun.sh /
-ENTRYPOINT ["./autorun.sh"]
+
+# Set the entrypoint and default command
+ENTRYPOINT ["/autorun.sh"]
 CMD ["false"]
 
-WORKDIR ./noetic_ws
-
-
-
+# Set working directory
+WORKDIR /noetic_ws
