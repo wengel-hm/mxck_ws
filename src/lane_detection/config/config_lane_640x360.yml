@@ -1,0 +1,13 @@
+lane_detection:
+  win_h: 20            # Height of the window in pixels
+  win_w: 50            # Width of the window in pixels
+  win_xleft: 50        # X-coordinate for the left boundary of the search window for the left lane line
+  win_xright: 590      # X-coordinate for the left boundary of the search window for the right lane line
+  win_y: 200           # Y-coordinate for the top of the window
+  image_w: 640         # Width of the image
+  image_h: 360         # Height of the image
+  num_windows: 1       # Number of windows
+  canny_min: 80        # Minimum threshold for Canny edge detection
+  canny_max: 240       # Maximum threshold for Canny edge detection
+  kernel: 5            # Kernel size for filters
+  setup_done: false    # Indicates whether setup is done
