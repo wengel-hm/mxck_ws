@@ -11,4 +11,4 @@ src/object_detection/models/vdi_adc/*
 
 # ignore bagfiles
 src/lane_detection/bagfiles/*
-!src/lane_detection/bagfiles/download_link.txt
+!src/lane_detection/bagfiles/download_bagfile.sh
