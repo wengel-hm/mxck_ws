@@ -3,15 +3,16 @@
 import rospy
 from std_msgs.msg import Float32
 from ackermann_msgs.msg import AckermannDriveStamped
-from dynamic_reconfigure.server import Server
-from pid_control.cfg import pid_tuningConfig
 
 class PIDcontrol():
 
     def __init__(self):
 
+        # read parameters
+        self.read_parameters()
+
         # subscribe offset
-        self.offset_sub = rospy.Subscriber('/offset', Float32, self.callback) # 20hz
+        self.offset_sub = rospy.Subscriber('/lane_center_offset', Float32, self.callback) # 20hz
 
         # publish ackermann
         self.ackermann_pub = rospy.Publisher('/autonomous/ackermann_cmd', AckermannDriveStamped, queue_size=1) 
@@ -25,25 +26,33 @@ class PIDcontrol():
         self.P, self.I, self.D = 0, 0, 0
         
         self.speed_mps, self.max_angle = 0, 0
+
+        # Setup timer to update parameters every 2 seconds
+        rospy.Timer(rospy.Duration(2), lambda e: self.read_parameters())
+    
+    def validate_parameters(self):
+        pass
+
+    def read_parameters(self):
+        try:
+            # Re-read parameters to see if they have been changed
+            self.kp = rospy.get_param('pid/kp')
+            self.ki = rospy.get_param('pid/ki')
+            self.kd = rospy.get_param('pid/kd')
+            self.max_angle = rospy.get_param('pid/max_angle')
+            self.speed = rospy.get_param('pid/speed')
+
+        except rospy.ROSException as e:
+            rospy.logwarn(f"Failed to retrieve parameter: {e}")
         
-    def update_params(self, config, level):
-        self.kp = config['kp']
-        self.ki = config['ki']
-        self.kd = config['kd']
-        self.speed_mps = config['speed']
-        self.max_angle = config['max_angle']
-        
-        rospy.loginfo("Updated kp: %.2f, ki: %.2f, kd: %.2f, speed: %.2f m/s, max_angle: %.2f rad" \
-            %(self.kp, self.ki, self.kd, self.speed_mps, self.max_angle))
-        
-        return config
+        self.validate_parameters()
     
     def callback(self, data):
         error = data.data
         
         t = rospy.Time.now()
         dt = (t - self.t_previous).to_sec()
-        de = self.e_previous - error # 
+        de = self.e_previous - error 
         self.P = error
         self.I = self.I + error * dt
         self.D = de / dt
@@ -51,7 +60,6 @@ class PIDcontrol():
         
         # clip output to +/- max_angle
         steer_rad = max(-self.max_angle, min(steer_rad, self.max_angle))
-        rospy.loginfo("steering angle [rad]: %.2f, offset px: %.2f" %(steer_rad, error))
         
         self.t_previous = t
         self.e_previous = error
@@ -60,12 +68,14 @@ class PIDcontrol():
         self.ackMsg.drive.steering_angle = steer_rad
         self.ackMsg.drive.speed = self.speed_mps
 
-        self.ackermann_pub.publish(self.ackMsg)
+        try:
+            self.ackermann_pub.publish(self.ackMsg)
+        except rospy.ROSException as e:
+            rospy.logerr(f"Failed to publish message: {str(e)}")
 
 if __name__ == "__main__":
     rospy.init_node("pid", anonymous = False)
     
     pid = PIDcontrol()
 
-    srv = Server(pid_tuningConfig, pid.update_params)
     rospy.spin()
