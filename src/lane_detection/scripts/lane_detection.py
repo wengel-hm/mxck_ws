@@ -299,8 +299,9 @@ class LaneDetection:
         # Calculate and normalize the offset in pixels relative to the image position
         self.offset = (self.cam_center - self.veh_center) / self.image_w  # Positive for offset (+) turn left, negative for offset (-) turn right
         
-        self.offset_msg.data = self.offset
-        self.pub_offset.publish(self.offset_msg)
+        if self.state != 'CALIBRATION':
+          self.offset_msg.data = self.offset
+          self.pub_offset.publish(self.offset_msg)
         
         if self.visualize:
             self.plot_position(image)
