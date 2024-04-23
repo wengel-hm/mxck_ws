@@ -5,10 +5,9 @@ src/CMakeLists.txt
 *.pyc
 
 # ignore models
-src/object_detection/models/vdi_adc/*
-!src/object_detection/models/vdi_adc/ssd-mobilenet.onnx
-!src/object_detection/models/vdi_adc/labels.txt
+src/object_detection/models/*
+!src/object_detection/models/.gitkeep
 
 # ignore bagfiles
-src/lane_detection/bagfiles/*
+src/lane_detection/bagfiles/*.bag
 !src/lane_detection/bagfiles/download_bagfile.sh
