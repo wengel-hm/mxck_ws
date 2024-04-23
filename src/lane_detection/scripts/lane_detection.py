@@ -46,15 +46,10 @@ class LaneDetection:
         # List to track center coordinates of detected lane lines for each frame: [left center, right center]
         self.center_list = []
 
-        self.first_image = None
-        self.offsets = []
-
     def callback(self, data):
         try:
             # Convert the ROS compressed image to an OpenCV image
             cv_image = self.bridge.compressed_imgmsg_to_cv2(data, "bgr8")
-            if self.first_image is None:
-                self.first_image = cv_image
         except CvBridgeError as e:
             rospy.logerr("CvBridge Error: {0}".format(e))
         else:
