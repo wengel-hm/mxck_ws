@@ -10,7 +10,8 @@
   <arg name="run_rs_imu" default="false" /> <!--publish realsense imu-->
   <arg name="run_foxglove" default="false" /> <!--stream data using foxglove-->
   <arg name="run_lights" default="false" /> <!--turn lights on-->
-  
+  <arg name="broadcast_tf" default="true" /> <!--broadcast transformation frames for the MXCarkit-->
+
    <!--ports-->
   <arg name="joy_port" value="/dev/input/js0" />
   <arg name="vesc_port" value="/dev/vesc" />
@@ -24,18 +25,27 @@
   <arg name="whitelist" value="[
   /imu_filtered,
   /imu_calibrated,
+  /rs_imu,
   /pdc_visualization,
   /camera/color/image_raw,
   /camera/gray/image_raw,
   /camera/color/image_jpeg,
   /bboxs,
   /scan,
-  /rs_imu,
   /uss_values,
   /veh_remote_ctrl,
   /path,
   /rc/ackermann_cmd,
+  /autonomous/ackermann_cmd,
+  /yolo/results,
+  /tf_static,
   ]" />
+
+  <!--tf-->
+  <group if="$(arg broadcast_tf)">
+    <include file="$(find mxck_run)/launch/mxck_tf.launch"/>
+  </group>
+
 
   <!--camera-->
   <group if="$(arg run_camera)">
@@ -52,12 +62,12 @@
       </include>
     </group>  
 	
-    <!--zqm stream-->
+    <!--jpeg stream-->
     <group if="$(eval arg('stream_via') == 'pyrealsense')">
       <include file="$(find realsense_stream)/launch/jpeg_publisher.launch">
           <arg name="width" value="640" />
           <arg name="height" value="360" />
-          <arg name="fps" value="30" />
+          <arg name="fps" value="6" />
       </include>
     </group>
 
