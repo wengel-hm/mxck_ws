@@ -1,12 +1,12 @@
 <launch>
+  <!-- Define the topics to be recorded as an argument -->
+  <arg name="topics" value="
+  /camera/color/image_jpeg
+  " />
 
-  	
-  <arg name="arguments" default="-o $(find mxck_run)/bagfiles/record --duration=5 /camera/color/image_raw" />
+  <!-- Set the output directory and the prefix for the recorded rosbag files -->
+  <arg name="path" default="-o $(find mxck_run)/bagfiles/record" />
 
-  <node name="record" pkg="rosbag" type="record" args="$(arg arguments)" output="screen"/>
-
-  
-
+  <!-- Concatenate the topics with the predefined arguments -->
+  <node name="record" pkg="rosbag" type="record" args="$(arg path) $(arg topics)" output="screen"/>
 </launch>
-
-

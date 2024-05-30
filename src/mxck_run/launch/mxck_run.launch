@@ -33,6 +33,8 @@
   /rs_imu,
   /uss_values,
   /veh_remote_ctrl,
+  /path,
+  /rc/ackermann_cmd,
   ]" />
 
   <!--camera-->
