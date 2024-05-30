@@ -13,6 +13,9 @@ RUN apt-get update \
     ros-$ROS_DISTRO-roslint \
     ros-$ROS_DISTRO-foxglove-bridge \
     ros-$ROS_DISTRO-foxglove-msgs \
+    ros-$ROS_DISTRO-xacro \
+    ros-$ROS_DISTRO-robot-state-publisher \
+    ros-$ROS_DISTRO-joint-state-publisher \
     python-scipy
 
 
@@ -22,8 +25,9 @@ RUN git clone https://github.com/f1tenth/vesc.git /vesc_ws/src \
  && . /opt/ros/melodic/setup.sh \
  && catkin_make
 
-# Utilizing Python 3 for integrating pyrealsense2 with pyzmq, enabling efficient image streaming.
-# This setup significantly outperforms traditional ROS image transport methods in speed.
+# Install Python 3.8 to use pyrealsense2
+# Utilize pyrealsense2 to capture raw images and publish them as compressed JPEG images via ROS for higher framerates
+# Set Python 3.6 as an alternative for Python 3 with lower priority and Python 3.8 with higher priority
 
 RUN apt update \
  && apt install --yes \
