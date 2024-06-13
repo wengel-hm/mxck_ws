@@ -3,6 +3,13 @@ FROM mxwilliam/mxck:mxck-noetic-perception-l4t-35.2.1
 Upgrade pip and install Python packages
 RUN python3 -m pip install \
     gdown
+    qpsolvers \ 
+    clarabel \ 
+    highspy \ 
+    transformations \
+    statistics \
+    scipy \ 
+    typing
 
 # Update system and install ROS packages
 # RUN apt update \
