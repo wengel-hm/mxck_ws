@@ -1,0 +1,5 @@
+<launch>
+
+    <node pkg="parking" name="run_parking" type="run_parking.py" output="screen"/>
+    
+</launch>
