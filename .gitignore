@@ -9,5 +9,6 @@ src/object_detection/models/*
 !src/object_detection/models/.gitkeep
 
 # ignore bagfiles
+*.bag
 src/lane_detection/bagfiles/*.bag
 !src/lane_detection/bagfiles/download_bagfile.sh
