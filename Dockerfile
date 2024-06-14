@@ -1,8 +1,12 @@
 FROM mxwilliam/mxck:mxck-noetic-perception-l4t-35.2.1
 
-Upgrade pip and install Python packages
+# Update system and install ROS packages
+RUN apt install --yes \
+    ros-noetic-tf2-ros
+    
+# Upgrade pip and install Python packages
 RUN python3 -m pip install \
-    gdown
+    gdown \
     qpsolvers \ 
     clarabel \ 
     highspy \ 
@@ -11,11 +15,7 @@ RUN python3 -m pip install \
     scipy \ 
     typing
 
-# Update system and install ROS packages
-# RUN apt update \
-# && apt install --yes \
-# ...
-
+   
 # Replace ros_entrypoint.sh
 COPY ./ros_entrypoint.sh /ros_entrypoint.sh
 
