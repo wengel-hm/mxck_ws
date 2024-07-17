@@ -1,0 +1,26 @@
+<launch>
+
+  <!--foxglove topic whitelist-->
+  <arg name="whitelist" value="[
+  /imu_filtered,
+  /imu_calibrated,
+  /pdc_visualization,
+  /camera/color/image_raw,
+  /camera/gray/image_raw,
+  /camera/color/image_jpeg,
+  /bboxs,
+  /scan,
+  /rs_imu,
+  /uss_values,
+  /veh_remote_ctrl,
+  /path,
+  /autonomous/ackermann_cmd,
+  ]" />
+
+  <node pkg="mpc" name="path_publisher" type="path_publisher.py" output="screen"/>
+
+
+
+
+
+</launch>
