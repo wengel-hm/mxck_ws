@@ -1,6 +1,6 @@
 <launch>
 
-    <param name="/yolo/mode" value="detection" />
+    <param name="/yolo/mode" value="segmentation" />
         
     <node pkg="object_detection" type="run_yolo.py" name="run_yolo" required = "true"  output = "screen"/>
 

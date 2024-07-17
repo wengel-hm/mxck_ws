@@ -9,6 +9,7 @@ from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
 from ultralytics import YOLO
 import matplotlib.pyplot as plt
+from std_msgs.msg import Float32MultiArray, MultiArrayDimension
 
 class YOLOV8:
     def __init__(self):
@@ -24,18 +25,24 @@ class YOLOV8:
         
         # Initialize different YOLO models for different tasks
         self.detection_model = YOLO(os.path.join(self.model_dir, "yolov8n.pt"))
-        self.segmentation_model = YOLO(os.path.join(self.model_dir, "yolov8n-seg.pt"))
+        self.segmentation_model = YOLO(os.path.join(self.model_dir, "lane_obj_detection.pt"))
         self.pose_model = YOLO(os.path.join(self.model_dir, "yolov8n-pose.pt"))
 
         # Choose mode
         self.mode = None
         self.update_mode()
 
+        #Setup parameters
+        rospy.set_param('/class_names_param', str(self.segmentation_model.names))
+
         # Setup timer to update parameters every 10 seconds
         rospy.Timer(rospy.Duration(10), lambda e: self.update_mode())
 
         # Setup publisher for compressed images
         self.pub_compressed = rospy.Publisher("/yolo/results", CompressedImage, queue_size=1)
+
+        # Setup publisher for multi array
+        self.pub_multi_array = rospy.Publisher("/yolo/multi_array",Float32MultiArray, queue_size=1)
 
         # Setup subscriber to receive compressed images
         self.subscriber = rospy.Subscriber("/camera/color/image_jpeg", CompressedImage, self.callback, queue_size=1)
@@ -48,7 +55,8 @@ class YOLOV8:
             results = self.model(cv_image)
 
             # Publish the processed image
-            self.publish_jpeg_compressed(data.header.stamp.to_sec(), results[0].plot())
+            self.publish_jpeg_compressed(data.header.stamp.to_sec(), results[0].plot()) #only result[0] is not empty as inference is only performed on one picture
+            self.publish_multi_array(results[0])
         except CvBridgeError as e:
             rospy.logerr("CvBridge Error: {0}".format(e))
 
@@ -64,6 +72,47 @@ class YOLOV8:
         except Exception as e:
             rospy.logerr(f"Error publishing image: {e}")
 
+    def publish_multi_array(self, results):
+        boxes = results.boxes.xyxy.tolist()
+        classes = results.boxes.cls.tolist()
+        names = results.names
+        confidences = results.boxes.conf.tolist()
+        
+        multi_array = []
+
+        for box, cls, conf in zip(boxes, classes, confidences):
+            x1, y1, x2, y2 = box
+            confidence = conf
+            detected_class = int(cls)
+            name = names[int(cls)]
+            single_array = [detected_class, x1, y1, x2, y2, confidence]
+            multi_array.append(single_array)
+
+        float_msg = self.matrix_to_float_multi_array(multi_array)
+
+        self.pub_multi_array.publish(float_msg)
+
+    def matrix_to_float_multi_array(self, matrix):
+        # Create the Float32MultiArray message
+        msg = Float32MultiArray()
+
+        if len(matrix) < 1:
+            return msg
+
+        rows, cols = len(matrix), len(matrix[0])
+        # Set up the layout
+        dim = [
+            MultiArrayDimension(label="height", size=rows, stride=rows*cols),
+            MultiArrayDimension(label="width", size=cols, stride=cols)
+        ]
+        msg.layout.dim = dim
+        msg.layout.data_offset = 0
+
+        # Flatten the matrix and assign it to the data field
+        flat_data = [item for sublist in matrix for item in sublist]
+        msg.data = flat_data
+        return msg
+    
     def update_mode(self):
         try:
             # Re-read the mode parameter
