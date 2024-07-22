@@ -1,0 +1,13 @@
+<launch>
+  
+  <!-- load config -->
+  <arg name="config_path" default="$(find path_planner)/config/config.yaml"/>
+  <rosparam file="$(arg config_path)" command="load" />
+
+  <!--pid controller-->
+  <node pkg="path_planner" type="run.py" name="lane_path_planner" required = "true" output = "screen" />
+  
+</launch>
+
+
+

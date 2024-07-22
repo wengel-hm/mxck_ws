@@ -95,8 +95,7 @@ class Parker:
         self.parkingspace_measured = 0
         self.e_previous = 0
         self.derivative = 0
-        self.time = 0
-        self.time_float = 0
+        self.pause = 0
         self.time_save_start = 0
         self.time_save_start_float = 0
         self.time_save_end = 0
@@ -144,10 +143,13 @@ class Parker:
             elif self.parkspace.detected == True:
                 self.go_to_startposition()
                 # self.parkspace.ready = True #nur zum debuggen
-            else:
+            elif self.pause >= 10:
                 #self.states()
                 #self.positioning()
                 self.parksuche()
+            else:
+                self.pause = self.pause +1
+                
         
 
         #t = rospy.Time.now()
@@ -207,42 +209,35 @@ class Parker:
 
     def parksuche(self):
 
-        self.time = rospy.Time.now()
-        self.time_float = self.time.to_sec()
-
-        if self.time_float > 1:
-
-            if self.derivative < -100 and self.time_save_start_float ==0:
-                self.time_save_start = rospy.Time.now()
-                self.time_save_start_float = self.time_save_start.to_sec()
-                print("Parklueckenanfang gefunden")
-            elif self.derivative > 100 and self.time_save_start_float !=0:
-                self.time_save_end = rospy.Time.now()
-                self.time_save_end_float = self.time_save_end.to_sec()
-                print("Parklueckenende gefunden")
-            elif self.time_save_start_float != 0 and self.time_save_end_float !=0 and self.delta_time_save == 0:
-                self.delta_time_save = (self.time_save_end_float - self.time_save_start_float)
-                print("Benoetigte Zeit: ",self.delta_time_save)
-            elif self.delta_time_save !=0:
-                self.parkplatz_rechner()
-            elif self.time_save_start_float !=0:
-                print("Warte auf Parklueckenende")
-                self.time_safe = rospy.Time.now()
-                self.time_safe_float = self.time_safe.to_sec()
-                self.such_reset = self.time_safe_float - self.time_save_start_float
-                if self.such_reset > 5:
-                    self.time_save_start = 0
-                    print("kein Ende gefunden - Zeitueberschreitung")
-                    self.time_save_start_float = 0
-                    self.time_save_start = 0
-                    self.time_save_end_float = 0
-                    self.time_save_end = 0
-                else:
-                    pass
+        if self.derivative < -100 and self.time_save_start_float ==0:
+            self.time_save_start = rospy.Time.now()
+            self.time_save_start_float = self.time_save_start.to_sec()
+            print("Parklueckenanfang gefunden")
+        elif self.derivative > 100 and self.time_save_start_float !=0:
+            self.time_save_end = rospy.Time.now()
+            self.time_save_end_float = self.time_save_end.to_sec()
+            print("Parklueckenende gefunden")
+        elif self.time_save_start_float != 0 and self.time_save_end_float !=0 and self.delta_time_save == 0:
+            self.delta_time_save = (self.time_save_end_float - self.time_save_start_float)
+            print("Benoetigte Zeit: ",self.delta_time_save)
+        elif self.delta_time_save !=0:
+            self.parkplatz_rechner()
+        elif self.time_save_start_float !=0:
+            print("Warte auf Parklueckenende")
+            self.time_safe = rospy.Time.now()
+            self.time_safe_float = self.time_safe.to_sec()
+            self.such_reset = self.time_safe_float - self.time_save_start_float
+            if self.such_reset > 5:
+                self.time_save_start = 0
+                print("kein Ende gefunden - Zeitueberschreitung")
+                self.time_save_start_float = 0
+                self.time_save_start = 0
+                self.time_save_end_float = 0
+                self.time_save_end = 0
             else:
-                print("Suche nach moeglichen Parkluecken")
+                pass
         else:
-            pass
+            print("Suche nach moeglichen Parkluecken")
 
 
     def parkplatz_rechner(self): #Rechnung für 0.5 m/s

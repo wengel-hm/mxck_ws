@@ -40,10 +40,7 @@
 
 This repository contains a ROS-based implementation of a Model Predictive Controller (MPC) designed for autonomous vehicle path following. The MPC algorithm is implemented in the `PathSubscriberNode` class, which subscribes to a path topic and publishes control commands to guide the vehicle along the desired trajectory. This MPC Controller is developed based on the "Applied Control Systems" course by Mark Misin on Udemy, as referenced below. For access to the course, please contact the owner of this repository. Currently, the controller operates solely in a simulated environment on a sinusoidal track. Additional issues and limitations are described below.   
 
-<div align="center">
-	<img src="mxck_ws/mxck_perception/src/mpc/resources/mpc.gif" />
-</div>
-
+For animation review the gif in the anmations folder.
 
 ---
 
@@ -247,6 +244,7 @@ roslaunch mpc run_mpc.launch
 - Because of the complexity of the bicycle model, it is not possible to recreate the controlled RC car accurately, as the physics of real-life cars, such as cornering stiffness, are not equivalent.
 - Another problem could be the unequal distances between the trajectory points. The controller needs the points to be equidistant in order to calculate the reference trajectory properly. This issue must also be fixed.
 - MPC requires solving an optimization problem in real-time. Limited computational power on an RC car's onboard computer could also be an issue.
+- Different solvers with faster solving were tested but the results were far away from perfect
 - The current implementation assumes a constant longitudinal velocity of 1 m/s.
 - At the time there is no implementation of a valuable speed change
 - The code includes sections for additional visualizations using matplotlib and OpenCV.

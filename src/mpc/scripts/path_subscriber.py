@@ -12,8 +12,7 @@ import matplotlib.pyplot as plt
 from qpsolvers import *
 import time
 from mpc.msg import Trajectory
-#from cv_bridge import CvBridge, CvBridgeError
-#import cv2
+
 # The following line of code dynamically modifies the Python search path for modules at runtime by appending a specific directory.
 # It uses the `rospkg` module, which provides an interface to ROS package locations, to find the directory of the 'mpc' package.
 # Specifically, it appends the 'include' directory within the 'mpc' package to the `sys.path` list. This is necessary because the
@@ -33,30 +32,30 @@ class PathSubscriberNode(object):
         # Subscribe to the /path topic
         self.path_sub = rospy.Subscriber('/path', Path, self.callback)
 
-        # publish ackermann messages to VESC
+        # Publish ackermann messages to VESC
         self.ackermann_pub = rospy.Publisher('/autonomous/ackermann_cmd', AckermannDriveStamped, queue_size=1) 
         self.trajectory_pub = rospy.Publisher('/trajectorympc', Trajectory, queue_size=1)
 
-        #publish image trajectory visualization
-        #self.image_pub = rospy.Publisher('/plot_image', Image, queue_size=1)
+        # Publish image trajectory visualization
+        
 
-        # define messages
+        # Define messages
         self.ackMsg = AckermannDriveStamped()
         self.trajMsg = Trajectory()
-        #self.bridge = CvBridge()
+       
         self.counter = 1
         #Define MPC constants
         self.support=SupportFilesCar() #Load the Supportfile
-        self.constants=self.support.constants #Set tge Constants Array
+        self.constants=self.support.constants #Set the Constants Array
         self.Ts=self.constants['Ts']
-        self.outputs=self.constants['outputs'] # number of outputs (psi, Y)
-        self.hz = self.constants['hz'] # horizon prediction period
-        self.time_length=self.constants['time_length'] # duration of the manoeuvre irrelvant
-        self.inputs=self.constants['inputs'] # zahl
+        self.outputs=self.constants['outputs'] # Number of outputs (psi, Y)
+        self.hz = self.constants['hz'] # Horizon prediction period
+        self.time_length=self.constants['time_length'] # Duration of the manoeuvre irrelvant
+        self.inputs=self.constants['inputs'] # Number of inputs is two, cant be changed
         self.x_lim=self.constants['x_lim']
         self.y_lim=self.constants['y_lim']
-        self.trajectory=self.constants['trajectory'] # art der traj
-        self.x_dot=1.#*8 #x_dot_ref[0]
+        self.trajectory=self.constants['trajectory'] # type of the trajectory, important for generated ones
+        self.x_dot=1.#x_dot_ref[0]
         self.y_dot=0. #y_dot_ref[0]
         self.psi=0.#psi_ref[0]
         self.psi_dot=0.
@@ -67,8 +66,8 @@ class PathSubscriberNode(object):
         self.psi_dot_dot=0.
         self.a=0
         self.states=np.array([self.x_dot,self.y_dot,self.psi,self.psi_dot,self.X,self.Y])
-        self.U1=0 # Input at t = -0.02 s (steering wheel angle in rad (delta))
-        self.U2=0 # Input at t = -0.02 s (acceleration in m/s^2 (a))
+        self.U1=0 # Input at t = -0.02 s at initialisation (steering wheel angle in rad (delta))
+        self.U2=0 # Input at t = -0.02 s at initialisation (acceleration in m/s^2 (a))
         self.last_time = rospy.Time.now()
 
 
@@ -106,14 +105,13 @@ class PathSubscriberNode(object):
         X_ref, Y_ref, psi_ref = self.get_trajectory(msg)
         print("get_trajectory: %.2f" % (time.time()-start))
         
-        #Y_ref = [-x for x in Y_ref1]
+        
         print("X_ref:",X_ref)
         X_ref_array = np.array(X_ref)
-        Y_ref_array = np.array(Y_ref)
-        Y_ref_array = Y_ref_array #* -1
-        print("Y_ref:",Y_ref_array)# Calculate the turning angle of the car based on the delta
+        Y_ref_array = np.array(Y_ref) # Generate numpy arrays for better working
+        print("Y_ref:",Y_ref_array)
         
-
+        # Calculate the turning angle of the car based on the delta
         # Calculate differences
         dX = X_ref_array[1:] - X_ref_array[:-1]
         dY = Y_ref_array[1:] - Y_ref_array[:-1]
@@ -123,7 +121,7 @@ class PathSubscriberNode(object):
         psi[0]=np.arctan2(dY[0],dX[0])
         psi[1:len(psi)]=np.arctan2(dY[0:len(dY)],dX[0:len(dX)])
 
-        #  keep track the amount of rotations of the yaw angle
+        #  Keep track the amount of rotations of the yaw angle
         dpsi=psi[1:len(psi)]-psi[0:len(psi)-1]
         psiInt[0]=psi[0]
         for i in range(1,len(psiInt)):
@@ -133,24 +131,22 @@ class PathSubscriberNode(object):
                 psiInt[i]=psiInt[i-1]+(dpsi[i-1]-2*np.pi)
             else:
                 psiInt[i]=psiInt[i-1]+dpsi[i-1]
-        #print("psi",psiInt)
-        x_dot_ref = np.ones_like(X_ref_array)
+        x_dot_ref = np.ones_like(X_ref_array) # generate arrays for the reference velocitys
         y_dot_ref = np.zeros_like(X_ref_array)
         
-        refSignals=np.zeros(len(X_ref)*self.outputs)
+        refSignals=np.zeros(len(X_ref)*self.outputs) # Generate refSignals 
         k=0
         
-        for i in range(0,len(refSignals),self.outputs):
+        for i in range(0,len(refSignals),self.outputs): # Fill refSignals
             refSignals[i]=x_dot_ref[k]
             refSignals[i+1]=psiInt[k]
             refSignals[i+2]=X_ref_array[k]
             refSignals[i+3]=Y_ref_array[k]
             k=k+1
-        #print("Ref_Signals",refSignals)
-        #print("states aktuell",self.states)
 
-        accelerations=np.array([self.x_dot_dot,self.y_dot_dot,self.psi_dot_dot])
-        du=np.zeros((self.inputs*self.hz,1)) # zwei lösungen
+
+        accelerations=np.array([self.x_dot_dot,self.y_dot_dot,self.psi_dot_dot]) # Keeps track of the calculated accelerations
+        du=np.zeros((self.inputs*self.hz,1)) # two possible solutions for steering angle and speed
 
         # Generate the discrete state space matrices
         Ad,Bd,Cd,Dd=self.support.state_space(self.states,self.U1,self.U2)
@@ -161,23 +157,8 @@ class PathSubscriberNode(object):
         r = refSignals
 
         Hdb,Fdbt,Cdb,Adc,G,ht,states_predicted=self.support.mpc_simplification(Ad,Bd,Cd,Dd,self.hz,x_aug_t,du)
-        #print("Pred states",states_predicted)
-        #print(f"{Fdbt.shape=}")
-        #print(f"{np.concatenate((np.transpose(x_aug_t)[0][0:len(x_aug_t)],r),axis=0).shape=}")
-        #print(f"{r.shape=}")
-        #print(f"{np.transpose(x_aug_t).shape=}")
-        #print(f"{np.transpose(x_aug_t)[0].shape=}")
-        #print(f"{np.transpose(x_aug_t)[0][0:len(x_aug_t)].shape=}")
+
         ft=np.matmul(np.concatenate((np.transpose(x_aug_t)[0][0:len(x_aug_t)],r),axis=0),Fdbt)
-        #Fdbt.shape=(28, 10)
-        #np.concatenate((np.transpose(x_aug_t)[0][0:len(x_aug_t)],r),axis=0).shape=(24,)
-        #Fdbt.shape=(28, 10)
-        #np.concatenate((np.transpose(x_aug_t)[0][0:len(x_aug_t)],r),axis=0).shape=(28,)
-        #r.shape=(20,)
-        #np.transpose(x_aug_t).shape=(1, 8)
-        #np.transpose(x_aug_t)[0].shape=(8,)
-        #np.transpose(x_aug_t)[0][0:len(x_aug_t)].shape=(8,)
-        #r.shape=(16,) ANDERS
 
         start = time.time()
         try:
@@ -209,14 +190,14 @@ class PathSubscriberNode(object):
             U2_pred = U2_pred+du[i*2+1][0]
             if i == 0:
                 states_pred=self.states
-            states_pred,xpp,ypp,psipp=self.support.open_loop_new_states_pred(states_pred,U1_pred,U2_pred)
-            X=states_pred[4]#x und y müssen in funktion noch auf nicht 0 gesetzt werden
+            states_pred,xpp,ypp,psipp=self.support.open_loop_new_states_pred(states_pred,U1_pred,U2_pred) # Calculate the solution for the vizualisation
+            X=states_pred[4]
             Y=states_pred[5]
             Xges[i] = X 
             Yges[i] = Y 
         print("xges", Xges)  
         print("yges", Yges)  
-        ## Pub von X_ref,Y_ref,Xges,Yges
+        ## Publishing X_ref,Y_ref,Xges,Yges if wanted
         #self.trajMsg.Xref = X_ref 
         #self.trajMsg.Yref = Y_ref
         #self.trajMsg.Xges = Xges
@@ -254,32 +235,18 @@ class PathSubscriberNode(object):
             print(f"Error in callback: {e}")
         
     
-
-        # Convert plot to image
-        #plt.tight_layout()
-        #fig = plt.gcf()
-        #fig.canvas.draw()
-        #img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-        #img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         
-        # Convert RGB to BGR
-        #img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        #image_msg = self.bridge.cv2_to_imgmsg(img, encoding="bgr8")
-        #self.image_pub.publish(image_msg)
-        #plt.close()
-        
-        self.U1=self.U1+du[0][0]  #steeringwheel angle  du ist die aenderung
-        self.U2=self.U2+du[1][0]  #acceleration
+        self.U1=self.U1+du[0][0]  # Steeringwheel angle du is the delta 
+        self.U2=self.U2+du[1][0]  # Acceleration du is the delta 
         print("Lenkwinkel:", self.U1)
         print("Beschl:",self.U2)
         
             
         self.states,self.x_dot_dot,self.y_dot_dot,self.psi_dot_dot=self.support.open_loop_new_states(self.states,self.U1,self.U2) #calculate new states 
-        # Einfuegen von x punkt, y punkt ueber beschl sensor, sowie psi dot 
-        #print("States",self.states)
+
         
       
-        #Integration von U2 von Beschl auf Geschw
+        #Integration of U2, acceleration to velocity
         #current_time = rospy.Time.now()
         #dt = (current_time - self.last_time).to_sec()
         #self.last_time = current_time

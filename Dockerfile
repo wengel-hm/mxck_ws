@@ -2,7 +2,8 @@ FROM mxwilliam/mxck:mxck-noetic-perception-l4t-35.2.1
 
 # Update system and install ROS packages
 RUN apt install --yes \
-    ros-noetic-tf2-ros
+    ros-noetic-tf2-ros \
+    ros-noetic-tf2-geometry-msgs
     
 # Upgrade pip and install Python packages
 RUN python3 -m pip install \

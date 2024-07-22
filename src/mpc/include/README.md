@@ -5,7 +5,7 @@
 
   
 
-This document provides a comprehensive overview of the `SupportFilesCar` class, which contains essential functions for implementing Model Predictive Control (MPC) for a car-like robot.
+This document provides a comprehensive overview of the `SupportFilesCar` class, which contains essential functions for implementing Model Predictive Control (MPC) for a car.
 
   
 
@@ -29,7 +29,7 @@ This document provides a comprehensive overview of the `SupportFilesCar` class, 
 
   
 
-The `SupportFilesCar` class is designed to provide the necessary components for implementing MPC for a car-like robot. It is used to outsource some functions from the original Model Predictive Controller file. It handles the following key aspects:
+The `SupportFilesCar` class is designed to provide the necessary components for implementing MPC for a car. It is used to outsource some functions from the original Model Predictive Controller file. It handles the following key aspects:
 
   
 
@@ -153,7 +153,7 @@ These methods compute the new state vector for one sample time later. They use a
 
   
 
-The `_pred` version is specifically used for prediction in the MPC algorithm.
+The `_pred` version is specifically used for prediction in the MPC algorithm, and the visualization of the generated path.
 
   
 

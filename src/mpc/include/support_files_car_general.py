@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 
 import numpy as np
-#import matplotlib.pyplot as plt
 
 class SupportFilesCar:
     ''' The following functions interact with the main file'''
     def __init__(self):
         ''' Load the constants that do not change'''
         g=9.81
-        m=6.161 #Masse faktor 0,0041
+        m=6.161 #Mass 
         Iz=0.2 #Moment of inertia
         Cf=8 #Front tire cornering stiffness (N/rad).
         Cr=10 #Rear tire cornering stiffness (N/rad).
         lf=0.195#Distance from the center of gravity to the front axle (m).
         lr=0.165#Distance from the center of gravity to the rear axle (m).
-        Ts=0.08 #fuer 1m/s    #0.16  #Sampling time for the MPC controller (s). wichtig fuer die abstaende der Punkte bei nicht const geschw evtl mit formel
+        Ts=0.08 #for 1m/s    #0.16  #Sampling time for the MPC controller (s). Important for the discrete distance between the waypoints, not constants for different velocitys
         mju=0.1  # equivalent to asphalt friction coefficient
         ####################### Lateral control #################################
 
         outputs=4 # number of outputs
         inputs=2 # number of inputs
-        hz = 8  #10 # horizon period, can be changed
+        hz = 8  # horizon period, can be changed
 
         trajectory=3 # Choose 1, 2 or 3, nothing else
         version=2 # This is only for trajectory 3 (Choose 1 or 2)
@@ -81,7 +80,7 @@ class SupportFilesCar:
 
         
 
-    def trajectory_generator(self, msg):
+    def trajectory_generator(self, msg): # Not relevant at the moment
         '''This method creates the trajectory for a car to follow'''
         # Arrays zur Speicherung der x- und y-Koordinaten der Wegpunkte
         x_ref = []
@@ -231,11 +230,10 @@ class SupportFilesCar:
         inputs=self.constants['inputs']
 
         ############################### Constraints ############################# 
-        d_delta_max=np.pi/150  #150  #200 maximaler aenderungswinkel #300
-        d_a_max=0.5#0.5            #200 max beschl, evtl anpassen	0.1 
-        d_delta_min=-np.pi/150 #150	#300
-        d_a_min=-0.5#-0.5		#-0.1
-
+        d_delta_max=np.pi/150  # maximaler aenderungswinkel
+        d_a_max=0.5        # max Beschleunigung
+        d_delta_min=-np.pi/150 
+        d_a_min=-0.5
         ub_global=np.zeros(inputs*hz)#legen grenzen fuer steuereingang fest
         lb_global=np.zeros(inputs*hz)
 
@@ -334,11 +332,11 @@ class SupportFilesCar:
 
             #####################################################################
 
-            ######################### Advanced LPV ############################## vorhersage der Zustände
+            ######################### Advanced LPV ############################## vorhersage der Zustaende
             if i<hz-1:
                 du1=du[inputs*(i+1)][0]
                 du2=du[inputs*(i+1)+inputs-1][0]
-                states_predicted_aug=np.matmul(A_aug,states_predicted_aug)+np.matmul(B_aug,np.transpose([[du1,du2]]))#Vorhersage der nächsten states
+                states_predicted_aug=np.matmul(A_aug,states_predicted_aug)+np.matmul(B_aug,np.transpose([[du1,du2]]))#Vorhersage der naechsten states
                 states_predicted=np.transpose(states_predicted_aug[0:6])[0]
                 delta_predicted=states_predicted_aug[6][0]#predicted lw 
                 a_predicted=states_predicted_aug[7][0]#predictet beschl
@@ -439,7 +437,7 @@ class SupportFilesCar:
         new_states[3]=psi_dot
         new_states[4]=0. #X
         new_states[5]=0. #Y
-        #print("newstates",new_states)
+        
 
         return new_states,x_dot_dot,y_dot_dot,psi_dot_dot
         
@@ -497,6 +495,6 @@ class SupportFilesCar:
         new_states[3]=psi_dot
         new_states[4]=X
         new_states[5]=Y
-        #print("newstates",new_states)
+        
 
         return new_states,x_dot_dot,y_dot_dot,psi_dot_dot

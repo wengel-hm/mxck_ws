@@ -1,0 +1,4 @@
+lane_path_planner:
+  n_waypoints: 8 # num waypoints along path14
+  y_distance: 1.5 # waypoints sampled along the longitudinal distance2.5
+
