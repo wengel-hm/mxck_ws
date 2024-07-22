@@ -17,6 +17,6 @@ RUN echo 'source /ros_entrypoint.sh' >> ~/.bashrc
 
 COPY ./autorun.sh /
 ENTRYPOINT ["./autorun.sh"]
-CMD ["false"]
+CMD ["false"]   
 
 WORKDIR ./melodic_ws

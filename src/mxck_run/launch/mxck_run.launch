@@ -25,20 +25,30 @@
   <arg name="whitelist" value="[
   /imu_filtered,
   /imu_calibrated,
-  /rs_imu,
   /pdc_visualization,
   /camera/color/image_raw,
   /camera/gray/image_raw,
   /camera/color/image_jpeg,
   /bboxs,
   /scan,
+  /rs_imu,
   /uss_values,
   /veh_remote_ctrl,
+  /vorhersage_topic,
+  /space_detected,
   /path,
-  /rc/ackermann_cmd,
+  /control_path,
+  /target_path,
   /autonomous/ackermann_cmd,
+  /pdc_pub_0,
+  /pdc_pub_1,
   /yolo/results,
-  /tf_static,
+  /distance_acc,
+  /speed_acc,
+  /best_cluster_acc,
+  /projected_lidar_image_acc,
+  /camera_info_pub,
+  '/trajectorympc',
   ]" />
 
   <!--tf-->
@@ -54,11 +64,11 @@
     <!--ros image-->
     <group if="$(eval arg('stream_via') == 'realsense_camera')">
       <include file="$(find realsense2_camera)/launch/rs_camera.launch" >
-        <arg name="color_width" value="320"/> <!--static params-->
-        <arg name="color_height" value="180"/>
+        <arg name="color_width" value="640"/> <!--static params-->
+        <arg name="color_height" value="360"/>
         <arg name="color_fps" value="6"/>
         <arg name="enable_confidence" value="False"/>
-        <arg name="enable_depth" value="False"/>
+        <arg name="enable_depth" value="True"/>
       </include>
     </group>  
 	

@@ -34,6 +34,6 @@
 
 	<node name="joy_to_ackermann" pkg="vehicle_control" type="joy_to_ackermann.py"  output="screen" required = "true"/>
 
-	<node name="ackermann_to_vesc" pkg="vehicle_control" type="ackermann_to_vesc.py"  output="screen" required = "true"/>
+	<node name="ackermann_to_vesc" pkg="vehicle_control" type="Controlling.py"  output="screen" required = "true"/>
 	
 </launch>

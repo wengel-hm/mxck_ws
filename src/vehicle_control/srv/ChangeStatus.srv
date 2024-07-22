@@ -1,0 +1,5 @@
+bool status
+string sender
+---
+bool success
+
