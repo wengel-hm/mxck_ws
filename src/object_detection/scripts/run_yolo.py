@@ -25,7 +25,7 @@ class YOLOV8:
         
         # Initialize different YOLO models for different tasks
         self.detection_model = YOLO(os.path.join(self.model_dir, "yolov8n.pt"))
-        self.segmentation_model = YOLO(os.path.join(self.model_dir, "lane_obj_detection.pt"))
+        self.segmentation_model = YOLO(os.path.join(self.model_dir, "obj_lane_v1.pt"))
         self.pose_model = YOLO(os.path.join(self.model_dir, "yolov8n-pose.pt"))
 
         # Choose mode
@@ -52,7 +52,7 @@ class YOLOV8:
             # Convert the ROS compressed image to an OpenCV image
             cv_image = self.bridge.compressed_imgmsg_to_cv2(data, "bgr8")
             # Process the image using the current model
-            results = self.model(cv_image)
+            results = self.model(cv_image, conf = 0.63)
 
             # Publish the processed image
             self.publish_jpeg_compressed(data.header.stamp.to_sec(), results[0].plot()) #only result[0] is not empty as inference is only performed on one picture
