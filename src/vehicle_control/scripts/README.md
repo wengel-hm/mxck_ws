@@ -9,6 +9,7 @@ This repository contains a ROS node that converts Ackermann drive commands to VE
 3. [Key Components](#key-components)
 4. [Driving Modes](#driving-modes)
 5. [Safety Features](#safety-features)
+6. [Implementation Details and Future Enhancements](#implementation-details-and-future-enhancements)
 
 ## Overview
 
