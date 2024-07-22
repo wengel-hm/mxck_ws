@@ -4,7 +4,7 @@
 import string
 import rospy
 import rospkg
-from std_msgs.msg import Int16MultiArray
+from std_msgs.msg import Int16MultiArray, Float32MultiArray
 from sensor_msgs.msg import Joy
 from std_msgs.msg import String, Int32
 from ackermann_msgs.msg import AckermannDriveStamped
@@ -15,6 +15,7 @@ import os
 from std_msgs.msg import Bool
 from statistics import median
 from collections import deque
+from vehicle_control.srv import ChangeStatus, ChangeStatusRequest
 
 
 
@@ -22,32 +23,83 @@ from collections import deque
 class ParkingSpace:
 
     def __init__(self):
-        self.object_sub = rospy.Subscriber("/vorhersage_topic", Int32, self.detect_type)
         self.set_variables()
+        self.multar = rospy.Subscriber("/yolo/multi_array", Float32MultiArray, self.callbackmultar)
+        
+        
+    def callbackmultar(self, msg):   #Multiarray subscription from object detection
+        self.multar = self.parse_multiarr(msg)
+        self.class_names_str = rospy.get_param('/class_names_param') 						# Extract parameters from object detection
+        self.class_names_str = self.class_names_str.strip('{}')
+        self.class_names_list = self.class_names_str.split(', ')
+        self.class_names_dict = {}
+        for item in self.class_names_list:
+            key, value = item.split(': ')
+            self.class_names_dict[int(key)] = value.strip("'")							# Extract Infromation from multiarray
+        if self.multar is not None:											# if the array is filled wih parameters
+            self.multar = self.replace_class_ids_with_names(self.multar, self.class_names_dict)			# replace IDs with names
+            for item in self.multar:											# Search multiarray and set booleans
+                class_name = item.get('class_name')									# Important parameters: class name and confidence (security feature)
+                confidence = item.get('confidence', 0)
+
+                if class_name == 'cross_parking' and confidence > 0.9:						
+                    self.type = 2
+                
+                
+                if class_name == 'parallel_parking' and confidence > 0.9:							
+                    self.type = 1
+                 
+                self.detect_type_change()
+    
+    def replace_class_ids_with_names(self, multiarray, class_names_dict):
+        for item in multiarray:
+            class_id = item.get('class_id')
+            if class_id in class_names_dict:
+                item['class_name'] = class_names_dict[class_id]
+        return multiarray
+        
+        
+    def parse_multiarr(self, msg):							# Extract the dimensions from the message
+        if msg.layout.dim:
+            rows = msg.layout.dim[0].size
+            cols = msg.layout.dim[1].size
+        else:
+            return
+
+        data = []
+        for i in range(rows):
+            start_index = i * cols
+            end_index = start_index + cols
+            row = msg.data[start_index:end_index]
+            class_id, x1, y1, x2, y2, confidence = row
+            entry = {
+                'class_id': int(class_id),
+                'x1': int(x1),
+                'y1': int(y1),
+                'x2': int(x2),
+                'y1': int(y1),
+                'confidence': float(confidence)}
+        
+            data.append(entry)
+    
+        return data            
 
 
 
     def set_variables(self):
         self.length = None
-        self.type = 2 # 0: keine Luecke; 1: parallel; 2: cross
+        self.type = 0 # 0: no sign detected; 1: parallel sign detected; 2: cross sign detected
+        self.type_old = 0
         self.ready = False 
         self.detected = False
-        self.object_array = np.zeros(5)
-        self.verification_counter = 0
 
 
-    def detect_type(self, data):
-        if self.type == 0:
-            self.object_array[self.verification_counter % 5] = data.data
-            if self.verification_counter >= 4:
-                if np.sum(self.object_array)/5 == 1:
-                    self.type = 1
-                elif np.sum(self.object_array)/5 == 2:
-                    self.type = 2
-            self.verification_counter += 1
+    def detect_type_change(self):
+        if self.type == self.type_old:
+            pass
         else:
-            self.object_array = np.zeros(5)
-            self.verification_counter = 0         
+            print("parking type", self.type)
+            self.type_old = self.type      
 
 
 
@@ -64,21 +116,16 @@ class Parker:
         self.path_parallel = bag_dir + "/parallel_inparking_manuvre_fix.bag"
         self.path_ausparken_cross = bag_dir + "/cross_outparking_manuvre_fix.bag"
         self.path_ausparken_parallel = bag_dir + "/parallel_outparking_manuvre_fix.bag"
-        #self.ackermann_pub = rospy.Publisher("/pdc/ackermann_cmd", AckermannDriveStamped, queue_size=10)
-        self.ackermann_pub = rospy.Publisher("/autonomous/ackermann_cmd", AckermannDriveStamped, queue_size=10)
+        self.ackermann_pub = rospy.Publisher("/pdc/ackermann_cmd", AckermannDriveStamped, queue_size=10)
         self.ackMsg = AckermannDriveStamped()
         self.space_detected_pub = rospy.Publisher("/space_detected", Bool, queue_size=1)
         self.pdc_sub = rospy.Subscriber("uss_values", Int16MultiArray, self.parking_callback)
         self.pdc_pub_0 = rospy.Publisher("/pdc_pub_0", Int32, queue_size=1)
         self.pdc_pub_1 = rospy.Publisher("/pdc_pub_1", Int32, queue_size=1)
         self.set_variables()
-        #self.joy_sub = rospy.Subscriber("/joy", Joy, self.joy_callback)
 
         self.PARALLEL = 1
         self.CROSS = 2
-        self.STRAIGHT = 1
-        self.DECREASE = 2
-        self.INCREASE = 3
         self.NONE = 0
         self.STEERING_OFFSET = -0.1
         self.PARKING_SPEED = 0.5
@@ -95,7 +142,8 @@ class Parker:
         self.parkingspace_measured = 0
         self.e_previous = 0
         self.derivative = 0
-        self.pause = 0
+        self.time = 0
+        self.time_float = 0
         self.time_save_start = 0
         self.time_save_start_float = 0
         self.time_save_end = 0
@@ -116,24 +164,18 @@ class Parker:
         self.parkspace.detected = False
         msg = Bool()
         msg.data = False
-        self.space_detected_pub.publish(msg)
-
-
-    # def joy_callback(self,msg):
-    #     self.dead_btn = msg.buttons[0]
-
-
 
     def parking_callback(self, data):
-        #self.distance0 = data.data[0]
-        #self.distance1 = data.data[1]
 
         self.distance0_puff.append(data.data[0])
         self.distance1_puff.append(data.data[1])
 
+        self.distance0_puff = deque([40 if x < 0 else x for x in self.distance0_puff], maxlen=self.filter_window_size)
+        self.distance1_puff = deque([40 if x < 0 else x for x in self.distance1_puff], maxlen=self.filter_window_size)
+
         self.distance0_filtered = median(self.distance0_puff)
         self.distance1_filtered = median(self.distance1_puff)
-
+        
         if self.parkspace.type != self.NONE:
             if self.parkspace.ready == True:
                 if self.parkspace.type == self.PARALLEL:
@@ -142,23 +184,13 @@ class Parker:
                     self.parking_cross()
             elif self.parkspace.detected == True:
                 self.go_to_startposition()
-                # self.parkspace.ready = True #nur zum debuggen
-            elif self.pause >= 10:
-                #self.states()
-                #self.positioning()
-                self.parksuche()
             else:
-                self.pause = self.pause +1
-                
+                self.parksearch()
         
-
-        #t = rospy.Time.now()
-        #dt = (t - self.t_previous).to_sec()
-        dt = 0.2
+        dt = 0.3
         delta = self.e_previous - self.distance0_filtered
         self.derivative = delta / dt
 
-        #self.t_previous = t
         self.e_previous = self.distance0_filtered
         
         distance0_filtered_to_publish = Int32()
@@ -170,122 +202,103 @@ class Parker:
         self.pdc_pub_0.publish(distance0_filtered_to_publish)
         self.pdc_pub_1.publish(distance1_filtered_to_publish)
 
+    def parksearch(self):
 
-    def states(self): #irrelevant
+        self.time = rospy.Time.now()
+        self.time_float = self.time.to_sec()
 
-        if self.distance1_filtered > 20:
-            self.state = self.DECREASE
-        elif self.distance1_filtered < 20:
-            self.state = self.INCREASE
-        else:
-            if self.distance0_filtered == self.distance1_filtered:
-                self.state = self.STRAIGHT
-            elif self.distance0_filtered > self.distance1_filtered:
-                self.state = self.DECREASE
+        if self.time_float > 1:
+
+            if self.derivative < -100 and self.time_save_start_float ==0:
+                self.time_save_start = rospy.Time.now()
+                self.time_save_start_float = self.time_save_start.to_sec()
+                print("Parkingspace start found")
+            elif self.derivative > 100 and self.time_save_start_float !=0:
+                self.time_save_end = rospy.Time.now()
+                self.time_save_end_float = self.time_save_end.to_sec()
+                print("Parkingspace end found")
+            elif self.time_save_start_float != 0 and self.time_save_end_float !=0 and self.delta_time_save == 0:
+                self.delta_time_save = (self.time_save_end_float - self.time_save_start_float)
+                print("Passed time: ",self.delta_time_save)
+            elif self.delta_time_save !=0:
+                self.parkspace_calculator()
+            elif self.time_save_start_float !=0:
+                print("Waiting for parkingspace end")
+                self.time_safe = rospy.Time.now()
+                self.time_safe_float = self.time_safe.to_sec()
+                self.such_reset = self.time_safe_float - self.time_save_start_float
+                if self.such_reset > 5:
+                    self.time_save_start = 0
+                    print("No ending detected - Timeout")
+                    self.time_save_start_float = 0
+                    self.time_save_start = 0
+                    self.time_save_end_float = 0
+                    self.time_save_end = 0
+                else:
+                    pass
             else:
-                self.state = self.INCREASE
-
-
-    def positioning(self): #irrelevant
-
-        self.ackMsg.drive.speed = 0.5
-
-        if self.state == self.STRAIGHT:
-            self.ackMsg.drive.steering_angle = 0
-            print("Fahre geradeaus")
-        elif self.state == self.DECREASE:
-            self.ackMsg.drive.steering_angle = 0.2
-            print("Verringere den Abstand")
-        elif self.state == self.INCREASE:
-            self.ackMsg.drive.steering_angle = -0.2
-            print("Vergroessere den Abstand")
+                print("Searching for possible parkingspaces")
         else:
-            self.ackMsg.drive.steering_angle = 0
-            self.ackMsg.drive.speed = 0
-            print("Fehlerhafter Positioningsstate")
-
-        self.ackermann_pub.publish(self.ackMsg)
+            pass
 
 
-    def parksuche(self):
-
-        if self.derivative < -100 and self.time_save_start_float ==0:
-            self.time_save_start = rospy.Time.now()
-            self.time_save_start_float = self.time_save_start.to_sec()
-            print("Parklueckenanfang gefunden")
-        elif self.derivative > 100 and self.time_save_start_float !=0:
-            self.time_save_end = rospy.Time.now()
-            self.time_save_end_float = self.time_save_end.to_sec()
-            print("Parklueckenende gefunden")
-        elif self.time_save_start_float != 0 and self.time_save_end_float !=0 and self.delta_time_save == 0:
-            self.delta_time_save = (self.time_save_end_float - self.time_save_start_float)
-            print("Benoetigte Zeit: ",self.delta_time_save)
-        elif self.delta_time_save !=0:
-            self.parkplatz_rechner()
-        elif self.time_save_start_float !=0:
-            print("Warte auf Parklueckenende")
-            self.time_safe = rospy.Time.now()
-            self.time_safe_float = self.time_safe.to_sec()
-            self.such_reset = self.time_safe_float - self.time_save_start_float
-            if self.such_reset > 5:
-                self.time_save_start = 0
-                print("kein Ende gefunden - Zeitueberschreitung")
-                self.time_save_start_float = 0
-                self.time_save_start = 0
-                self.time_save_end_float = 0
-                self.time_save_end = 0
-            else:
-                pass
-        else:
-            print("Suche nach moeglichen Parkluecken")
-
-
-    def parkplatz_rechner(self): #Rechnung für 0.5 m/s
+    def parkspace_calculator(self): #Calculation for 0.5 m/s
         self.delta_time_save = self.delta_time_save
 
-        if self.delta_time_save > 1.4: #v=d/t d=v*t t=d/v 70cm
+        if self.delta_time_save > 0.6: #v=d/t d=v*t t=d/v 70cm
             if self.delta_time_save < 2: #100cm
-                print("!!!Parallelparking erkannt!!!")
+                print("!!!Parallelparking detected!!!")
                 self.parkspace.length = (0.35 * self.delta_time_save) * 100
-                print("Parklueckenlaenge: ",self.parkspace.length)
+                print("Parkingspace length: ",self.parkspace.length)
                 self.parkingspace_measured = 1
-                self.parkluecke_positiv()
+                self.parkspace_positiv()
             else:
-                print("!!!Fehlerhafte Parkluecke erkannt!!! - Parallelparking erwartet")
+                print("!!!Faulty parkingspace!!! - Parallelparking expected")
                 self.time_save_start_float = 0
                 self.time_save_end_float = 0
                 self.delta_time_save = 0
         elif self.delta_time_save > 0.15: #40cm
             if self.delta_time_save < 0.8: #60cm
-                print("!!!Crossparking erkannt!!!")
+                print("!!!Crossparking detected!!!")
                 self.parkspace.length = (0.35 * self.delta_time_save) * 100
-                print("Parklueckenlaenge: ",self.parkspace.length)
+                print("Parkingspace length: ",self.parkspace.length)
                 self.parkingspace_measured = 2
-                self.parkluecke_positiv()
+                self.parkspace_positiv()
             else:
-                print("!!!Fehlerhafte Parkluecke erkannt!!! - Crossparking erwartet")
+                print("!!!Faulty Parkingspace!!! - Crossparking expected")
                 self.time_save_start_float = 0
                 self.time_save_end_float = 0
                 self.delta_time_save = 0
         else:
-            print("Das war keine Parkluecke")
+            print("That wasn't a Parkingspace")
             self.time_save_start_float = 0
             self.time_save_end_float = 0
             self.delta_time_save = 0
 
 
 
-    def parkluecke_positiv(self):
+    def parkspace_positiv(self):
         
         if self.parkingspace_measured == self.parkspace.type:
-            print("Measured stimmt mit Vorhersage überein - Startposition wird angefahren")
-            self.parkspace.detected = True
-
-            msg = Bool()
-            msg.data = True
-            self.space_detected_pub.publish(msg)
+            print("requesting Service call")
+            req = ChangeStatusRequest()
+        
+            change_status = rospy.ServiceProxy('change_status', ChangeStatus)
+            response = change_status(True, "parking")
+            rospy.loginfo("Service call successful. Response: {}".format(response))    
+            if response.success:
+                print("Measured and Prediction match - Service call successful")
+            
+            
+                self.parkspace.detected = True
+            
+            else:
+                print("No Permission obtained")
+                self.time_save_start_float = 0
+                self.time_save_end_float = 0
+                self.delta_time_save = 0
         else:
-            print("Measured stimmt NICHT mit Vorhersage überein")
+            print("Measured and Prediction don't match - continue searching")
             self.time_save_start_float = 0
             self.time_save_end_float = 0
             self.delta_time_save = 0
@@ -295,7 +308,7 @@ class Parker:
 
         self.r = rospy.Rate(30)
 
-        print("Fahre Startposition an") #85cm vorfahren t ~ 1.7s
+        print("Driving to startposition") #85cm forward t ~ 1.7s
 
         for _ in range(40):
             self.ackMsg.drive.steering_angle = self.STEERING_OFFSET
@@ -315,35 +328,70 @@ class Parker:
             self.ackermann_pub.publish(self.ackMsg)
             self.r.sleep()
 
-        print("Startposition erreicht")
+        print("reached Startposition")
 
         self.parkspace.ready=True
 
 
     def parking_parallel(self):
 
-        print("Parke parallel ein")
+        print("Starting parallel parking process")
         self.r2 = rospy.Rate(30)
 
+        for _ in range(27):
+            self.ackMsg.drive.steering_angle = self.STEERING_OFFSET
+            self.ackMsg.drive.speed = -self.PARKING_SPEED
+            self.ackermann_pub.publish(self.ackMsg)
+            self.r2.sleep()
+
+
         for index, (topic, msg, t) in enumerate(rosbag.Bag(self.path_parallel).read_messages(topics=["/autonomous/ackermann_cmd"])):
-            if index == 18:
-                for _ in range(20):
+            if index == 15:
+                for _ in range(45):
                     self.ackMsg.drive.steering_angle = 0
                     self.ackMsg.drive.speed = -self.PARKING_SPEED
                     self.ackermann_pub.publish(self.ackMsg)
                     self.r2.sleep()
 
-            elif index > 20 and index < 163:
-                if msg.drive.steering_angle == 0:
-                    msg.drive.steering_angle = self.STEERING_OFFSET
-                msg.drive.speed = -self.PARKING_SPEED + 0.1
-                self.ackermann_pub.publish(msg)
-                self.r2.sleep()
-        #Alternativ: Trajektorie
+            elif index > 20 and index < 210:
+                if index < 40:
+                    self.ackMsg.drive.steering_angle = 0.4
+                    self.ackMsg.drive.speed = -self.PARKING_SPEED
+                    self.ackermann_pub.publish(self.ackMsg)
+                    self.r2.sleep()
+                else:
+                    self.ackMsg.drive.steering_angle = -0.4
+                    self.ackMsg.drive.speed = -self.PARKING_SPEED + 0.1
+                    self.ackermann_pub.publish(msg)
+                    self.r2.sleep()
 
-        rospy.sleep(10) # sleep 10 seconds
+        for index in range (10):
+            self.ackMsg.drive.steering_angle = self.STEERING_OFFSET
+            self.ackMsg.drive.speed = self.PARKING_SPEED
+            self.ackermann_pub.publish(self.ackMsg)
+            self.r2.sleep()
 
-        print("Parke in 10 Sekunden aus")
+        for index in range (10):
+            self.ackMsg.drive.steering_angle = 0.4
+            self.ackMsg.drive.speed = self.PARKING_SPEED
+            self.ackermann_pub.publish(self.ackMsg)
+            self.r2.sleep()
+
+        for index in range (8):
+            self.ackMsg.drive.steering_angle = -0.4
+            self.ackMsg.drive.speed = -self.PARKING_SPEED
+            self.ackermann_pub.publish(self.ackMsg)
+            self.r2.sleep()
+
+        for index in range (1):
+            self.ackMsg.drive.steering_angle = 0.4
+            self.ackMsg.drive.speed = self.PARKING_SPEED
+            self.ackermann_pub.publish(self.ackMsg)
+            self.r2.sleep()
+
+        rospy.sleep(10)
+
+        print("Getting groceries and leaving parkingspace in 10 seconds")
 
         for _ in range(300):
             self.r.sleep()
@@ -384,18 +432,17 @@ class Parker:
                 self.ackMsg.drive.speed = (self.PARKING_SPEED)
                 self.ackermann_pub.publish(self.ackMsg)
                 self.r2.sleep()
-
-        # for index, (topic, msg, t) in enumerate(rosbag.Bag(self.path_ausparken_parallel).read_messages(topics=["/autonomous/ackermann_cmd"])):
-        #     if index > 30:
-        #         msg.drive.speed = self.PARKING_SPEED
-        #         self.ackermann_pub.publish(msg)
-        #         self.r2.sleep()
         
         for _ in range(60):
             self.r.sleep()
 
-        print("Erfolgreiches Parkmaneuvre")
+        print("Successful Parkmanuvre")
         
+        req = ChangeStatusRequest()
+        
+        change_status = rospy.ServiceProxy('change_status', ChangeStatus)
+        response = change_status(False, "parking")
+        rospy.loginfo("Service call successful. Response: {}".format(response))  
         self.set_variables()
         self.parkspace.set_variables()
 
@@ -403,10 +450,14 @@ class Parker:
 
     def parking_cross(self):
 
-        print("Parke cross ein")
+        print("Starting cross parking process")
         self.r2 = rospy.Rate(30)
 
-
+        for _ in range(25):
+            self.ackMsg.drive.steering_angle = self.STEERING_OFFSET
+            self.ackMsg.drive.speed = -self.PARKING_SPEED
+            self.ackermann_pub.publish(self.ackMsg)
+            self.r2.sleep()
 
 
         for index, (topic, msg, t) in enumerate(rosbag.Bag(self.path_cross).read_messages(topics=["/autonomous/ackermann_cmd"])):
@@ -434,12 +485,10 @@ class Parker:
                     self.ackMsg.drive.steering_angle = self.STEERING_OFFSET
                     self.ackMsg.drive.speed = 0
                     self.ackermann_pub.publish(self.ackMsg)
-                
-        #Alternativ: Trajektorie
         
         rospy.sleep(10)
         
-        print("Parke in 10 Sekunden aus")
+        print("Getting groceries and leaving parkingspace in 10 seconds")
 
         rospy.sleep(10)
 
@@ -450,7 +499,14 @@ class Parker:
         
         for _ in range(60):
             self.r.sleep()
-
+            
+        print("Successful Parkmanuvre")
+        
+        req = ChangeStatusRequest()
+        
+        change_status = rospy.ServiceProxy('change_status', ChangeStatus)
+        response = change_status(False, "parking")
+        rospy.loginfo("Service call successful. Response: {}".format(response))   
         self.set_variables()
         self.parkspace.set_variables()
 
