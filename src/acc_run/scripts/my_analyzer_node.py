@@ -3,7 +3,7 @@ import rospy
 import numpy as np
 from sensor_msgs.msg import LaserScan, PointCloud, Image, CompressedImage, CameraInfo
 from geometry_msgs.msg import Point, Point32, PoseStamped, TransformStamped
-from std_msgs.msg import Bool, Float32
+from std_msgs.msg import Bool, Float32, Float32MultiArray, MultiArrayDimension
 from nav_msgs.msg import Path
 import math
 import time
@@ -11,16 +11,24 @@ import transformations
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
 import tf2_ros
-import tf2_geometry_msgs # sudo apt install ros-noetic-tf2-geometry-msgs
+import tf2_geometry_msgs # Bei fehldender Datei: sudo apt install ros-noetic-tf2-geometry-msgs
 from scipy.optimize import curve_fit
 import csv
 
-
+# roslaunch mxck_run mxck_run.launch run_camera:=true run_lidar:=true run_foxglove:=true
+# rosrun acc_run my_analyzer_node.py
 
 class AnalyzerNode:
     def __init__(self):
         rospy.init_node("analyzer_node", anonymous=True)
         rospy.loginfo("ROS Lidar Analyzer started!")
+
+        #
+        # Einstellungen / Versionen
+        #
+        self.use_cluster_code_without_detection = False  # Flag zum manuellen Einschalten des Standalone Codes falls Objekterkennung NICHT verwendet werden soll (True läuft stabil)
+        self.use_boundry_code_without_detection = True # Flag zum manuellen Einschalten des Standalone Codes falls Linienerkennung NICHT verwendet werden soll (True läuft stabil)
+        self.calibrate_fusion_on = False # Flag zum aktivieren der Kalibrierfunktionen (wird bei großen Änderungen oder Umbauten benötigt)
         
         #
         # Subscriber
@@ -28,37 +36,44 @@ class AnalyzerNode:
         self.lidar_sub = rospy.Subscriber("/scan", LaserScan, self.lidar_callback)
         self.path_sub = rospy.Subscriber('/path', Path, self.boundary_callback) # Mittellinie sub (in Zukunft eig. Seitenlinien mit boundary_sub)
         self.camera_sub = rospy.Subscriber("/camera/color/image_jpeg", CompressedImage, self.camera_callback, queue_size=1)
-        self.own_speed_sub = rospy.Subscriber("/currentspeed", Float32, self.speed_callback)  # Bekommt die Geschwindigkeit des eigenen Fahrzeugs (TODO: Implementieren)
+        self.multiarray_sub = rospy.Subscriber("/yolo/multi_array", Float32MultiArray, self.multiarray_callback, queue_size=1)
+        self.own_speed_sub = rospy.Subscriber("/currentspeed", Float32, self.speed_callback)  # Bekommt die Geschwindigkeit des eigenen Fahrzeugs
         #self.boundary_sub = rospy.Subscriber("/track_boundaries", PointCloud, self.boundary_callback)  # Bekommt die Streckenbegrenzung (gibts noch nicht)
 
         #
-        # Publisher TODO: Muss alles neu auf Whitelist
+        # Publisher
         #
         self.distance_pub = rospy.Publisher("/distance_acc", Float32, queue_size=1)
         self.speed_front_vehicle_pub = rospy.Publisher("/speed_acc", Float32, queue_size=1) 
         self.best_cluster_scan_pub = rospy.Publisher("/best_cluster_acc", LaserScan, queue_size=1)
         self.image_pub = rospy.Publisher("/projected_lidar_image_acc", Image, queue_size=1)
         self.camera_info_pub = rospy.Publisher("/camera/color/camera_info_acc", CameraInfo, queue_size=1)  # CameraInfo Publisher
+        self.multiarray_with_distance_pub = rospy.Publisher("/yolo/multi_array_acc", Float32MultiArray, queue_size=1)
 
-        #self.middle_line_pub = rospy.Publisher("/middle_line", Path, queue_size=1)
-        #self.left_boundary_pub = rospy.Publisher("/left_boundary", Path, queue_size=1)
-        #self.right_boundary_pub = rospy.Publisher("/right_boundary", Path, queue_size=1)
+        self.middle_line_pub = rospy.Publisher("/middle_line_acc", Path, queue_size=1)
+        self.left_boundary_pub = rospy.Publisher("/left_boundary_acc", Path, queue_size=1)
+        self.right_boundary_pub = rospy.Publisher("/right_boundary_acc", Path, queue_size=1)
 
-        #self.tf_broadcaster = tf2_ros.TransformBroadcaster()
 
         #
         # Data placeholders und co
         #
 
-        #self.middle_line = []  # Mittellinie
-        #self.left_boundary = []  # Linke Streckenbegrenzung
-        #self.right_boundary = []  # Rechte Streckenbegrenzung
+        # Für die Objekterkennung
+        self.detected_objects = []  # Initialisiere detected_objects als leere Liste
+
+        # Für die Linien
+        self.middle_line = []  # Mittellinie
+        self.left_boundary = []  # Linke Streckenbegrenzung
+        self.right_boundary = []  # Rechte Streckenbegrenzung
+        self.middle_line_available = False  # Flag, um zu überprüfen, ob die Mittellinie verfügbar ist, Standard False
 
         # Fake Werte für Mittellinie zum Testen
-        #if False:
-        #    self.x_ref = np.array([-0.3025, -0.3275, -0.3525, -0.3775, -0.4025, -0.4275, -0.4525, -0.4775, -0.5025, -0.5275])
-        #    self.y_ref = np.array([0.06395297, 0.06784961, 0.07163364, 0.07530504, 0.07886383, 0.08231, 0.08564354, 0.08886447, 0.09197278, 0.09496847])
-        #    self.update_boundaries(self.x_ref, self.y_ref)
+        if False:
+            self.x_ref = np.array([0.3025, 0.3275, 0.3525, 0.3775, 0.4025, 0.4275, 0.4525, 0.4775, 0.5025, 0.5275])
+            self.y_ref = np.array([0.06395297, 0.06784961, 0.07163364, 0.07530504, 0.07886383, 0.08231, 0.08564354, 0.08886447, 0.09197278, 0.09496847])
+            self.update_boundaries(self.x_ref, self.y_ref)
+            self.middle_line_available = True
 
         # Kameramatrix
         self.K = np.array([[454.7581481933594, 0.0, 322.9541015625],
@@ -67,7 +82,7 @@ class AnalyzerNode:
         
         self.track_boundaries = []  # Dynamisch aktualisierte Streckenbegrenzungen
 
-        self.own_speed = 0.0  # Fake Wert zum testen - Eigene Geschwindigkeit in m/s TODO: Ändern
+        self.own_speed = 0.0  # Initialisieren der eigenen Geschwindigkeit
 
         self.real_lidar_data = None
         self.last_lidar_receive_time = None  # Time when the last lidar data was received
@@ -86,7 +101,7 @@ class AnalyzerNode:
 
         
         # Initialisierung der Kalibrierungsdaten
-        if False:
+        if self.calibrate_fusion_on:
             self.known_distances = []
             self.observed_offsets = []
             self.accuracy_data = []
@@ -118,8 +133,8 @@ class AnalyzerNode:
             self.start_time = rospy.Time.now()
         
 
-        self.known_distances = [0.96, 1.96, 2.94, 3.88, 4.95] # Alte Werte: [1, 2, 3, 5, 7, 10, 15]
-        self.observed_offsets = [6.3, 6.0, 8.7, 5.2, 15.0] # Alte Werte: [0.8, 0.5, 0.35, 0.25, 0.2, 0.15, 0.1]
+        self.known_distances = [0.96, 1.96, 2.94, 3.88, 4.95]
+        self.observed_offsets = [6.3, 6.0, 8.7, 5.2, 15.0]
         # Kurvenanpassung durchführen
         self.scaling_function = self.calibrate_scaling_function(self.known_distances, self.observed_offsets)
         
@@ -131,6 +146,8 @@ class AnalyzerNode:
         self.publish_static_transform()
 
         self.accuracy_data = []
+
+        self.multiarray_infos = ['car', 'cross_parking', 'curb_left', 'curb_right', 'dashed_line', 'end_no_passing', 'green', 'left', 'no_lights', 'no_passing', 'orange', 'parallel_parking', 'pit_in', 'pit_out', 'ps_horiziontal', 'ps_vertical', 'red', 'red_orange', 'right', 'street1']
 
 
 ##########################################################
@@ -146,13 +163,16 @@ class AnalyzerNode:
 
     # Callback für track boundaries - bekommt die Punkte der Streckenbegrenzung
     def boundary_callback(self, data):
-        #rospy.loginfo("Boundry Callback aufgerufen!")
-        x_ref, y_ref, _ = self.get_trajectory(data)  # psi ist irrelevant
-        self.update_boundaries(x_ref, y_ref)
+        if len(data.poses) > 0:
+            x_ref, y_ref, _ = self.get_trajectory(data)  # psi ist irrelevant
+            self.update_boundaries(x_ref, y_ref)
+            self.middle_line_available = True
+        else:
+            self.middle_line_available = False
  
     # Callback der eigenen Geschwindigkeit
     def speed_callback(self, data):
-        self.own_speed = 0#data # TODO: soll data
+        self.own_speed = data if data else 0.0
 
     # Callback des Lidars - setzt zudem die Zeit des letzten Lidaraufrufs
     def lidar_callback(self, data):
@@ -167,6 +187,19 @@ class AnalyzerNode:
         except CvBridgeError as e:
             rospy.logerr(f"CvBridge Error: {e}")
     
+    # Callback des Mulitarrays
+    def multiarray_callback(self, data):
+        detected_objects = []
+        for i in range(0, len(data.data), 6):
+            object_type = data.data[i]
+            x_min = data.data[i + 1]
+            y_min = data.data[i + 2]
+            x_max = data.data[i + 3]
+            y_max = data.data[i + 4]
+            probability = data.data[i + 5]
+            detected_objects.append((object_type, x_min, y_min, x_max, y_max, probability))
+        self.detected_objects = detected_objects
+
 
 ##########################################################
 
@@ -327,8 +360,8 @@ class AnalyzerNode:
 
         # Linke und rechte Begrenzungslinien basierend auf der Mittellinie erstellen
         for x, y in self.middle_line:
-            left_y = y - 1.5 #TODO: Wieder auf 0.25 oder so ändern (auch y)
-            right_y = y + 1.5
+            left_y = y - 0.5 
+            right_y = y + 0.5
 
             self.left_boundary.append((x, left_y))
             self.right_boundary.append((x, right_y))
@@ -405,11 +438,26 @@ class AnalyzerNode:
         object_x = object_distance * math.cos(math.radians(object_angle))
         object_y = object_distance * math.sin(math.radians(object_angle))
 
-        is_within_boundaries = (-20 <= object_x <= 0) and (-1 <= object_y <= 1) and (object_angle <= -120 or object_angle >= 120)# Hier werden die Fake Begrenzungen gecheckt
+        is_within_main_boundaries = (-20 <= object_x <= 0) and (object_angle <= -120 or object_angle >= 120)
+        if not is_within_main_boundaries:
+            return False
 
-        return is_within_boundaries
- 
+        use_boundry_code_without_detection = self.use_boundry_code_without_detection or not self.middle_line_available
 
+        if use_boundry_code_without_detection:
+            is_within_boundaries = (-20 <= object_x <= 0) and (-1 <= object_y <= 1) and (object_angle <= -120 or object_angle >= 120)
+            return is_within_boundaries
+        
+
+        # Überprüfen, ob die y-Koordinate zwischen den Streckenbegrenzungen liegt
+        for i in range(len(self.left_boundary)):
+            left_y = self.left_boundary[i][1]
+            right_y = self.right_boundary[i][1]
+            if left_y <= object_y <= right_y:
+                return True
+
+        return False
+    
 
 ##########################################################
     #
@@ -428,6 +476,7 @@ class AnalyzerNode:
 
             distance_diff = current_distance - self.previous_distance
             relative_speed = distance_diff / time_diff
+            relative_speed = np.float32(relative_speed)
 
             # Überprüfe, ob ein Clusterwechsel stattgefunden hat
             if self.is_cluster_change(current_distance, self.previous_distance):
@@ -488,6 +537,30 @@ class AnalyzerNode:
 
         self.best_cluster_scan_pub.publish(scan)
 
+##########################################################
+
+    #
+    # Funktionen zur Umsetzung der Objekterkennung
+    #
+
+    def publish_multiarray_with_distance(self, detected_objects_with_distances):
+        multiarray_msg = Float32MultiArray()
+        multiarray_msg.layout.dim = [
+            MultiArrayDimension(label="height", size=len(detected_objects_with_distances), stride=7),
+            MultiArrayDimension(label="width", size=7, stride=7)
+        ]
+        multiarray_msg.layout.data_offset = 0
+
+        data = []
+        for obj in detected_objects_with_distances:
+            object_type, x_min, y_min, x_max, y_max, probability, distance = obj
+            data.extend([object_type, x_min, y_min, x_max, y_max, probability, distance])
+
+        multiarray_msg.data = data
+        self.multiarray_with_distance_pub.publish(multiarray_msg)
+
+
+
 
 ##########################################################
 ##########################################################
@@ -498,15 +571,16 @@ class AnalyzerNode:
 
     def process_data(self):
 
-        #self.update_boundaries(self.x_ref, self.y_ref)
-        
+        if self.middle_line_available:
+            self.update_boundaries(self.x_ref, self.y_ref)
+
         # Abbrechen falls keine Lidardaten vorhanden sind
         if self.real_lidar_data is None:
             rospy.loginfo("No Lidar data available")
             return
         
         # Abbrechen wenn zu lange keine Lidar Daten empfangen wurden
-        if (rospy.Time.now() - self.last_lidar_receive_time).to_sec() > 1.0:  # TODO: Kürzer?
+        if (rospy.Time.now() - self.last_lidar_receive_time).to_sec() > 0.5:
             rospy.loginfo("Waiting for new Lidar data...")
             return
 
@@ -552,55 +626,144 @@ class AnalyzerNode:
             clusters.append(cluster)
 
 
-        # Bestes Cluster wählen (das am nächsten zur Mitte liegt)
-        if clusters:
-            best_cluster = min(clusters, key=lambda cl: abs(sum(pt[3] for pt in cl) / len(cl))) #TODO: Statt beste cluster zur mittellinie könnte hier das cluster verwendet werden, welches von der kamera als ein fahrzeug erkannt wurde
-            
-            current_distance = np.mean([pt[0] for pt in best_cluster])
-            front_vehicle_speed = self.calculate_front_vehicle_speed(current_distance)
-            self.previous_distance = current_distance
-            self.previous_time = time.time()
+        # Überprüfen, ob der alte Code verwendet werden soll oder kein MultiArray empfangen wurde
+        use_cluster_code_without_detection = self.use_cluster_code_without_detection or not self.detected_objects
 
-            self.distance_pub.publish(Float32(current_distance))
-            self.speed_front_vehicle_pub.publish(Float32(front_vehicle_speed))
-            rospy.loginfo(f'Current distance to the vehicle in front: {current_distance:.2f} meters')
-            rospy.loginfo(f'Current speed of the vehicle in front: {front_vehicle_speed:.2f} m/s')
-            object_detected = True
+        if use_cluster_code_without_detection:
+            # Bestes Cluster wählen (das am nächsten zur Mitte liegt)
+            if clusters:
+                best_cluster = min(clusters, key=lambda cl: abs(sum(pt[3] for pt in cl) / len(cl))) 
+                
+                current_distance = np.mean([pt[0] for pt in best_cluster])
+                front_vehicle_speed = self.calculate_front_vehicle_speed(current_distance)
+                self.previous_distance = current_distance
+                self.previous_time = time.time()
 
-            # Bestes Cluster veröffentlichen
-            self.publish_best_cluster_as_laserscan(best_cluster)
+                self.distance_pub.publish(Float32(current_distance))
+                self.speed_front_vehicle_pub.publish(Float32(front_vehicle_speed))
+                rospy.loginfo(f'Current distance to the vehicle in front: {current_distance:.2f} meters')
+                rospy.loginfo(f'Current speed of the vehicle in front: {front_vehicle_speed:.2f} m/s')
+                object_detected = True
 
-            ##########################################
+                # Bestes Cluster veröffentlichen
+                self.publish_best_cluster_as_laserscan(best_cluster)
 
-            # Transformation
-            if self.camera_image is not None:
-                projected_points = self.transform_and_project_lidar_points(self.real_lidar_data)
-                image_with_lidar = self.camera_image.copy()
+                ##########################################
 
-                for point in projected_points:
-                    x, y = int(point[0]), int(point[1])
-                    if 0 <= x < image_with_lidar.shape[1] and 0 <= y < image_with_lidar.shape[0]:
-                        cv2.circle(image_with_lidar, (x, y), 3, (0, 0, 0), -1)  # Schwarz für andere Punkte
+                # Transformation
+                if self.camera_image is not None:
+                    projected_points = self.transform_and_project_lidar_points(self.real_lidar_data)
+                    image_with_lidar = self.camera_image.copy()
 
-                for point in best_cluster:
-                    camera_point = self.transform_point(np.array([point[2], point[3], 0]), self.lidar_frame_id, "camera_frame")
-                    if camera_point is not None:
-                        pixel_coords = self.project_to_image_plane(camera_point)
-                        if not np.any(np.isinf(pixel_coords)) and not np.any(np.isnan(pixel_coords)):
-                            x, y = int(pixel_coords[0]), int(pixel_coords[1])
-                            if 0 <= x < image_with_lidar.shape[1] and 0 <= y < image_with_lidar.shape[0]:
-                                cv2.circle(image_with_lidar, (x, y), 5, (0, 0, 255), -1)  # Rot für bestes Cluster
+                    for point in projected_points:
+                        x, y = int(point[0]), int(point[1])
+                        if 0 <= x < image_with_lidar.shape[1] and 0 <= y < image_with_lidar.shape[0]:
+                            cv2.circle(image_with_lidar, (x, y), 3, (0, 0, 0), -1)  # Schwarz für andere Punkte
 
-                                # Kalibrierungsdaten sammeln
-                                #self.collect_calibration_data(current_distance, math.degrees(angle), pixel_coords)
-                try:
-                    image_msg = self.bridge.cv2_to_imgmsg(image_with_lidar, "bgr8")
-                    self.image_pub.publish(image_msg)
-                except CvBridgeError as e:
-                    rospy.logerr(f"CvBridge Error: {e}")
+                    for point in best_cluster:
+                        camera_point = self.transform_point(np.array([point[2], point[3], 0]), self.lidar_frame_id, "camera_frame")
+                        if camera_point is not None:
+                            pixel_coords = self.project_to_image_plane(camera_point)
+                            if not np.any(np.isinf(pixel_coords)) and not np.any(np.isnan(pixel_coords)):
+                                x, y = int(pixel_coords[0]), int(pixel_coords[1])
+                                if 0 <= x < image_with_lidar.shape[1] and 0 <= y < image_with_lidar.shape[0]:
+                                    cv2.circle(image_with_lidar, (x, y), 5, (0, 0, 255), -1)  # Rot für bestes Cluster
 
+                                    # Kalibrierungsdaten sammeln
+                                    if self.calibrate_fusion_on:
+                                        self.collect_calibration_data(current_distance, math.degrees(angle), pixel_coords)
+                    try:
+                        image_msg = self.bridge.cv2_to_imgmsg(image_with_lidar, "bgr8")
+                        self.image_pub.publish(image_msg)
+                    except CvBridgeError as e:
+                        rospy.logerr(f"CvBridge Error: {e}")
 
-            ##########################################
+                ##########################################
+
+        else:
+            # Wähle Cluster welches in erkannter Box liegt
+            detected_objects_with_distances = []
+            if clusters and hasattr(self, 'detected_objects'):
+                for obj in self.detected_objects:
+                    object_type, x_min, y_min, x_max, y_max, probability = obj
+                    for cl in clusters:
+                        cluster_found = False
+                        for pt in cl:
+                            camera_point = self.transform_point(np.array([pt[2], pt[3], 0]), self.lidar_frame_id, "camera_frame")
+                            if camera_point is not None:
+                                pixel_coords = self.project_to_image_plane(camera_point)
+                                if (x_min <= pixel_coords[0] <= x_max) and (y_min <= pixel_coords[1] <= y_max):
+                                    detected_objects_with_distances.append((object_type, x_min, y_min, x_max, y_max, probability, np.mean([p[0] for p in cl])))
+                                    if object_type == 0.0 and not best_cluster:
+                                        best_cluster = cl
+                                    cluster_found = True
+                                    break
+                        if cluster_found:
+                            break
+
+            if best_cluster:
+                current_distance = np.mean([pt[0] for pt in best_cluster])
+                front_vehicle_speed = self.calculate_front_vehicle_speed(current_distance)
+                self.previous_distance = current_distance
+                self.previous_time = time.time()
+
+                self.distance_pub.publish(Float32(current_distance))
+                self.speed_front_vehicle_pub.publish(Float32(front_vehicle_speed))
+                # Nur loggen, wenn es sich um ein Fahrzeug handelt (object_type == 0.0)
+                for detected_obj in detected_objects_with_distances:
+                    object_type, _, _, _, _, _, _ = detected_obj
+                    # if self.multiarray_infos[int(object_type)] == 'car':
+                    if object_type == 0.0:
+                        rospy.loginfo(f'Current distance to the vehicle in front: {current_distance:.2f} meters')
+                        rospy.loginfo(f'Current speed of the vehicle in front: {front_vehicle_speed:.2f} m/s')
+                        break
+                object_detected = True
+
+                # Bestes Cluster veröffentlichen
+                self.publish_best_cluster_as_laserscan(best_cluster)
+
+                # MultiArray mit Distanzdaten veröffentlichen
+                self.publish_multiarray_with_distance(detected_objects_with_distances)
+
+                ##########################################
+
+                # Transformation
+                if self.camera_image is not None:
+                    projected_points = self.transform_and_project_lidar_points(self.real_lidar_data)
+                    image_with_lidar = self.camera_image.copy()
+
+                    for point in projected_points:
+                        x, y = int(point[0]), int(point[1])
+                        if 0 <= x < image_with_lidar.shape[1] and 0 <= y < image_with_lidar.shape[0]:
+                            cv2.circle(image_with_lidar, (x, y), 3, (0, 0, 0), -1)  # Schwarz für andere Punkte
+
+                    for detected_obj in detected_objects_with_distances:
+                        object_type, x_min, y_min, x_max, y_max, probability, distance = detected_obj
+                        for point in best_cluster:
+                            camera_point = self.transform_point(np.array([point[2], point[3], 0]), self.lidar_frame_id, "camera_frame")
+                            if camera_point is not None:
+                                pixel_coords = self.project_to_image_plane(camera_point)
+                                if not np.any(np.isinf(pixel_coords)) and not np.any(np.isnan(pixel_coords)):
+                                    x, y = int(pixel_coords[0]), int(pixel_coords[1])
+                                    if 0 <= x < image_with_lidar.shape[1] and 0 <= y < image_with_lidar.shape[0]:
+                                        cv2.circle(image_with_lidar, (x, y), 5, (0, 0, 255), -1)  # Rot für bestes Cluster
+
+                                    if object_type != 0.0:
+                                        for point in cl:
+                                            camera_point = self.transform_point(np.array([point[2], point[3], 0]), self.lidar_frame_id, "camera_frame")
+                                            if camera_point is not None:
+                                                pixel_coords = self.project_to_image_plane(camera_point)
+                                                if not np.any(np.isinf(pixel_coords)) and not np.any(np.isnan(pixel_coords)):
+                                                    x, y = int(pixel_coords[0]), int(pixel_coords[1])
+                                                    if 0 <= x < image_with_lidar.shape[1] and 0 <= y < image_with_lidar.shape[0]:
+                                                        cv2.circle(image_with_lidar, (x, y), 5, (0, 255, 0), -1)  # Grün für andere Objekte
+
+                    try:
+                        image_msg = self.bridge.cv2_to_imgmsg(image_with_lidar, "bgr8")
+                        self.image_pub.publish(image_msg)
+                    except CvBridgeError as e:
+                        rospy.logerr(f"CvBridge Error: {e}")
+
 
         if not object_detected:
             current_distance = 999
@@ -676,20 +839,6 @@ class AnalyzerNode:
 ##########################################################
 ##########################################################
 
-    # Broadcast TF transform from laser to map
-    def broadcast_transform(self, event):
-        t = TransformStamped()
-        t.header.stamp = rospy.Time.now()
-        t.header.frame_id = "map"
-        t.child_frame_id = "laser"
-        t.transform.translation.x = 0.0
-        t.transform.translation.y = 0.0
-        t.transform.translation.z = 0.0
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = 0.0
-        t.transform.rotation.w = 1.0
-        self.tf_broadcaster.sendTransform(t)
 
     #
     # Run Funktion - hier kann die Hz-Rate eingestellt werden!
