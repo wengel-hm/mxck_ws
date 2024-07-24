@@ -1,8 +1,46 @@
-﻿# run_parking
+# run_parking
 
-This script implements a parking algorithm for an autonomous vehicle using ROS (Robot Operating System), while processing ultrasonic sensor data and interacting with other ROS-Nodes.
+This script implements a parking algorithm for an autonomous vehicle using ROS (Robot Operating System). It processes ultrasonic sensor data and interacts with other ROS nodes to execute parking maneuvers.
+
+ 1. [Initial PDC-Data Analysis](#initial-pdc-data-analysis)
+ 2. [Rosbag Analysis](#rosbag-analysis)
+ 3. [Class ParkingSpace](#class-parkingspace)
+ 4. [Class Parker](#class-parker)
+
+# Initial PDC-Data Analysis
+
+The first attempts to analyze the behavior of PDC-Data provided valuable insights into potential methods for detecting parking spaces. The table below illustrates the results:
+
+| Crossparking | Parallelparking |
+|--------------|-----------------|
+|![crossparking space](https://i.ibb.co/WFD5jQg/pdc-karo-c-400x700-200.png) | ![parallelparking space](https://i.ibb.co/vVVTPp4/pdc-kiste-p-700x400-200.png) |
+|The front right sensor (dark blue in upper plot) consistently provided the most reliable data.|The front right sensor (dark blue in upper plot) again proved to be the most consistent data source.|
+|At 5-6 seconds, the car approaches and drives alongside the first parked vehicle.|Between 5-6.75 seconds, the car approaches and drives alongside the first parked vehicle.|
+|The car passes the cross-parking space between 6-6.25 seconds.|The parallel parking space is passed between 6.75-7.5 seconds.|
+|At 6.25 seconds, the car reaches the end of the parking space, detecting the hood of the second parked car.|The end of the parking space is reached at 7.5 seconds, with the hood of the second parked car being detected.|
+
+It's worth noting that the raw data from the front right, back side right, and back right sensors suffered from random noise spikes. This made them unsuitable for accurately measuring or detecting parking spaces without implementing a filter.
+
+# Rosbag Analysis
+
+Initially, the use of pre-recorded bag files was intended for executing parking maneuvers. However, the first attempts showed suboptimal results. To investigate the cause of the car's unexpected behavior, a bag file was recorded while the car autonomously followed a line and then replayed.
+
+| Path during autonomous driving and recording | Path during bag file playback | Observations |
+|----------------------------------------------|-------------------------------|--------------|
+| ![autonomously driving1](https://i.ibb.co/ZLrW9nn/Video-Capture-20240724-075712.jpg) | ![playing bagfile1](https://i.ibb.co/GPG70xG/Video-Capture-20240724-075750.jpg) | After navigating the first two corners and a correction maneuver to realign with the center line, a discrepancy of 20 cm between the original path and the replayed path occured. |
+| ![autonomously driving2](https://i.ibb.co/x8Jt6Cb/Video-Capture-20240724-080027.jpg) | ![playing bagfile2](https://i.ibb.co/ygmGqrS/Video-Capture-20240724-075756.jpg) | After an additional two meters of travel, the replayed bag file steered the car in a different direction, further increasing the path deviation. |
+
+To address these discrepancies when using bag files, a correction sequence was implemented. This sequence manually overwrites specific indices with proven Ackermann messages. While this improved performance, the car's movements at very low speeds and short distances remained inconsistent. We suspect this may be due to an insensitive VESC and the absence of a rev-encoder.
+
+The images below showcase three different outcomes of the same parallel parking maneuver, all starting from the same initial position and using identical code:
+
+| Attempt 1 | Attempt 2 | Attempt 3 |
+|-----------|-----------|-----------|
+| ![1](https://i.ibb.co/YtSk0Zh/20240621-173438.jpg) | ![2](https://i.ibb.co/1zWyV0h/20240621-173449.jpg) | ![3](https://i.ibb.co/KVZdv8p/20240621-173502.jpg) |
 
 # Class ParkingSpace
+
+The ParkingSpace class is responsible for classifying parking spaces based on input from object detection systems. It maintains the state of the detected parking space, including its type and relevant states for parking maneuvers.
 
 1. [Initialized Variables](#initialized-variables)
 2. [Class Functions](#class-functions)
@@ -12,8 +50,6 @@ This script implements a parking algorithm for an autonomous vehicle using ROS (
    4. [parse_multiarr](#parse_multiarr)
    5. [set_variables](#set_variables)
    6. [detect_type_change](#detect_type_change)
-
-This class is responsible for detecting and classifying parking spaces based on input from object detection systems. It maintains the state of the detected parking space, including its type and relevant states for parking maneuvers.
 
 ## Initialized Variables
 
@@ -62,7 +98,8 @@ Detects and handles changes in the parking space type.
 
 # Class Parker
 
-## Table of Contents
+The Parker class manages the entire automated parking process, including detecting parking spaces, executing parking maneuvers, and controlling the vehicle's movements.
+
 1. [Initialized Variables](#initialized-variables)
 2. [Flowchart](#flowchart)
 3. [Class Functions](#class-functions)
@@ -95,7 +132,6 @@ Detects and handles changes in the parking space type.
 | time_safe_float | float | Timestamp for timeout as a float |
 | distance0_1, distance1_1, distance0_2, distance1_2 | list | Lists for storing distance measurements |
 | distance0, distance1 | list | Current distance measurements |
-| timestamps | list | List of timestamps |
 | parkspace | class | ParkingSpace class |
 | t_previous | rospy.Time | Previous time for calculations |
 
@@ -141,7 +177,7 @@ Initializes the Parker object.
 
 ### set_variables
 Initializes all state variables to their initial values.
-- Resets timers, distances, states, and flags
+- Resets timers, distances, states and flags
 
 ### parking_callback
 Callback function for ultrasonic sensor data.
